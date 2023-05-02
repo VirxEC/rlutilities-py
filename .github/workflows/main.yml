@@ -1,0 +1,172 @@
+name: Build & Deploy Files
+
+env:
+  CARGO_TERM_COLOR: always
+
+on:
+  push:
+    branches: [ "master" ]
+
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Update Rust to last stable
+        run: rustup update stable
+
+      - uses: actions/cache@v3
+        id: cache
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target
+          key: ${{ runner.os }}-cargo
+
+      - name: Build wheels
+        uses: messense/maturin-action@v1
+        with:
+          target: x64
+          args: --release --out dist
+          rust-toolchain: stable
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheels
+          path: dist
+
+  manylinux:
+    runs-on: ubuntu-20.04
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        submodules: true
+
+    - name: Update Rust to last stable
+      run: rustup update stable
+
+    - uses: actions/cache@v3
+      id: cache
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target
+        key: ${{ runner.os }}-cargo
+
+    - name: Build wheels
+      uses: messense/maturin-action@v1
+      with:
+        target: x86_64
+        manylinux: auto
+        container: off
+        args: --release --out dist
+
+    - name: Upload wheels
+      uses: actions/upload-artifact@v3
+      with:
+        name: wheels
+        path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - uses: messense/maturin-action@v1
+        with:
+          maturin-version: latest
+          container: off
+          command: sdist
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: sdist
+          path: target/wheels
+
+  release:
+    needs: [sdist, manylinux, windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Fetch Cargo.toml
+        uses: actions/checkout@v3
+        
+      - name: Download wheels
+        uses: actions/download-artifact@v3
+        with:
+          name: wheels
+          path: wheels
+
+      - name: Create singularity
+        run: |
+          mkdir out
+          cd wheels
+          unzip *win*.whl
+          unzip -n *linux*.whl
+          mv *.whl ../out/
+          cd rlutilities
+          zip -r ../../out/rlutilities.zip .
+          cd ../..
+
+      - name: Upload singularity
+        uses: actions/upload-artifact@v3
+        with:
+          name: rlutilities
+          path: out/rlutilities.zip
+
+      - name: Check Release Tags
+        id: version_check_staging
+        run: |
+          git fetch --all --tags
+          cver=$(grep -x "version = ".*"" Cargo.toml | head -1)
+          cver=${cver#"version = \""}
+          cver=${cver%"\""}
+          echo 'rawVersion='$cver >> $GITHUB_OUTPUT
+          cver=v$cver
+          echo 'releaseVersion='$cver >> $GITHUB_OUTPUT
+          if [ $(git tag -l "$cver") ]; then
+              echo 'versionChanged=false' >> $GITHUB_OUTPUT
+          else
+              echo 'versionChanged=true' >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download sdist
+        if: ${{ steps.version_check_staging.outputs.versionChanged == 'true' }}
+        uses: actions/download-artifact@v3
+        with:
+          name: sdist
+          path: out
+
+      - name: Create Release
+        if: ${{ steps.version_check_staging.outputs.versionChanged == 'true' }}
+        uses: ncipollo/release-action@v1
+        with:
+          name: ${{ steps.version_check_staging.outputs.releaseVersion }} RLUtilities ABI Python Bindings
+          artifacts: "out/*.tar.gz,out/*.zip,out/*win*.whl,out/*linux*.whl"
+          body: The .zip file is the drop-in replacement for the RLUtilities bindings. The .tar.gz is the minimal source distribution if you wish to download and compile this project yourself. The two *.whl files are pip wheels for installing for only one platform (Windows/Linux) via pip.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.version_check_staging.outputs.releaseVersion }}
+          repo: rlutilities-rs

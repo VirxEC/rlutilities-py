@@ -1,0 +1,20 @@
+[package]
+name = "rlutilities"
+version = "0.2.0"
+edition = "2021"
+publish = false
+exclude = [".gitignore", ".github/", "tests/", "python/", "examples/", "rustfmt.toml", "pytest.py"]
+
+[lib]
+crate-type = ["cdylib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rlutilities_rs = { version = "0.2", path = "../rlutilities-rs" }
+pyo3 = { version = "0.18.0", features = ["abi3-py37", "extension-module"] }
+
+[profile.release]
+lto = true
+strip = true
+panic = "abort"
