@@ -81,8 +81,6 @@ def get_random_packet():
 
     return packet
 
-print()
-
 start_time = time_ns()
 Game.set_mode("soccar")
 

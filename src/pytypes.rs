@@ -22,7 +22,7 @@ impl From<Vector3> for cvec3 {
 impl From<Vector3> for Vec3 {
     #[inline]
     fn from(value: Vector3) -> Self {
-        Self([value.x, value.y, value.z])
+        Self::from([value.x, value.y, value.z])
     }
 }
 
@@ -126,7 +126,7 @@ impl From<Rotator> for cvec3 {
 impl From<Rotator> for Vec3 {
     #[inline]
     fn from(value: Rotator) -> Self {
-        Self([value.pitch, value.yaw, value.roll])
+        Self::from([value.pitch, value.yaw, value.roll])
     }
 }
 
